@@ -7,7 +7,7 @@ Hate that first requests are slow before the results get cached?
 
 ## Technology:
 * Rails 4.2 for ActiveJob ecosystem
-* https://rubygems.org/gems/backport_new_renderer gem from Rails5 for request-less rendering
+* https://rubygems.org/gems/backport_new_renderer gem from Rails5 for request-less rendering (see [the post](https://evilmartians.com/chronicles/new-feature-in-rails-5-render-views-outside-of-actions))
 * Sidekiq as the job adapter
 * Redis - configured to be dedicated to cache only, memory-limited, LRU-expiry.
 
