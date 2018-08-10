@@ -1,0 +1,15 @@
+default: &default
+  adapter: postgresql
+  encoding: utf-8  
+  pool: 5
+  # username: sample_postgres
+  # password:
+
+development:
+  <<: *default
+  database: beforehand
+
+test:
+  <<: *default
+  database: beforehand_test
+
