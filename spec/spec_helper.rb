@@ -5,7 +5,7 @@ require "rspec/rails"
 require "factory_bot"
 require "pry"
 require "database_cleaner"
-require "capybara"
+require "capybara_helper"
 
 Dir[Rails.root.join("spec", "support", "**", "*.rb")].each { |f| require f }
 
@@ -35,6 +35,11 @@ RSpec.configure do |config|
   end
 
   config.before(:each) do |test|
+    Beforehand.configure do |c|
+      c.anti_dogpile_threshold = 20 # as in 20s
+      c.verbose = false
+    end
+
     DatabaseCleaner.strategy = :transaction
 
     if test.metadata.key?(:wait_time)

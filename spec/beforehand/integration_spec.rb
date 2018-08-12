@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # rspec spec/beforehand/integration_spec.rb
-RSpec.describe Beforehand, type: :feature do
+RSpec.describe Beforehand, type: :feature, js: true do
   let!(:user1) { create(:user) }
   let!(:user2) { create(:user) }
 
@@ -13,7 +13,7 @@ RSpec.describe Beforehand, type: :feature do
   end
 
   describe "cache preheat after record update" do
-    it "preheats cache after record update", driver: :chrome do
+    it "preheats cache after record update" do
       # 1. Checking that runtime caching works
       unheated_open_time = Benchmark.realtime do
         visit users_path

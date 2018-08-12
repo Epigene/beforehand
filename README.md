@@ -42,7 +42,9 @@ where you define which template(s) to render in the background and pre-cache.
 3. Have child records `touch` their parents 
 4. Have the cache clear on every boot
 5. Have caching-enabled view(s) using `beforehand`-flavored cache keys
-6. Have `beforehand` callbacks configured
+6. Pass a truthy `ENV["CACHE_BEFOREHAND"]` option
+   to processes you want to allow to enqueue after-init caching, usually your webserver (puma/unicorn) process, but not `sidekiq` and ad-hoc `rails c` calls.
+7. Have `beforehand` callbacks configured
  - 5.1 Global configuration
  - 5.2 Model-specific configuration
    - 5.2.1 Method that will produce HTML and cache it
@@ -144,6 +146,11 @@ Beforehand.configure do |c|
   # set to true to get messages in logs like this:
   # TODO
   c.verbose = false 
+  
+  # `.beforehand` method argument validation behavior
+  # Defaults to true for strict and safe.
+  # If you are doing some runtime metaprogramming magic, you may need to set this to false
+  c.strict_beforehand_options = true
 end
 ```
 
@@ -173,18 +180,44 @@ class User < ActiveRecord::Base
   SUPPORTED_LOCALES = ["en", "lv"].freeze
 
   SUPPORTED_LOCALES.each do |locale|
-    # Define a callback for each variant to render
+    # Define a callback for each locale variant to render
     beforehand(
-      run: [:on_init, :on_callback],    
+      # when to preheat. Must specify at least one
+      run: :on_callback,     
+      # how to preheat     
       method: {
         name: :preheat_users_index_rows,
         # NB, to avoid serialization problems, *use JSON-compatible positional arg values only*!
         args: [locale]
       },
-      job_options: {queue: :another_queue},  
+      job_options: {        
+        queue: :precache,        
+      },  
       callback_options: { # supports the same options after_commit does.
         on: :create 
       }
+    )
+    
+    # define an after-init warming block
+    beforehand(     
+      run: :on_app_init,      
+      init_options: {
+        # Specify a calleable object (like a lambda) that will return which records to preheat on app init.
+        # Be careful not to enqueue too much as it will slow things down for you         
+        collection: -> { active.order(updated_at: :desc).first(50) },
+        # specify an integer priority for order in which init preheating will be enqueued
+        # lower means will be picked earlier. Defaults to 5.
+        priority: 1 
+      },
+      # how to preheat     
+      method: {
+        name: :preheat_users_index_rows,
+        # NB, to avoid serialization problems, *use JSON-compatible positional arg values only*!
+        args: [locale]
+      },
+      job_options: {        
+        queue: :low        
+      }       
     )
   end  
 
@@ -206,9 +239,14 @@ end
 # in /config/environments/production.rb
 Rails.application.configure do
   # ...
+  
+  # For init preheating to work, models need to be read for the callback definition
+  config.eager_load = true 
+  # OR, If you do not want to eager_load everything,
+  # calling the model to trigger code load will suffice
+  User
 
-  config.cache_classes = true
-  config.eager_load = true
+  config.cache_classes = true 
 
   config.after_initialize do
     Rails.logger.info("--> Enqueuing records for pre-heating")
@@ -237,5 +275,6 @@ This is an open-source project, you are welcome to participate in its developmen
 - [] Can preheat single records in a single locale
 - [] Can preheat a single record in multiple locales
 - [] Cache job guards against dogpiling
+- [] Only enqueue init jobs once even when running several independent worker processes (puma spec)
 
 

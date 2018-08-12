@@ -2,7 +2,31 @@
 
 module Beforehand
   module ActiveRecordHook
+    extend ActiveSupport::Concern
+
     module ClassMethods
+
+      def beforehand(run:, method:, job_options: {}, callback_options: {}, init_options: {})
+        if run == :on_callback
+          beforehand_on_callback
+        elsif run == :on_app_init
+          beforehand_on_app_init
+        else
+          raise("'#{run}' is not a supported :run option. Try :on_callback or :on_app_init")
+        end
+
+        nil
+      end
+
+      private
+        def beforehand_on_callback
+
+        end
+
+        def beforehand_on_app_init
+
+        end
+
       # def jsonb_accessor(jsonb_attribute, field_types)
       #   names_and_store_keys = field_types.each_with_object({}) do |(name, type), mapping|
       #     _type, options = Array(type)

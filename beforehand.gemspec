@@ -30,8 +30,10 @@ Gem::Specification.new do |s|
   s.add_development_dependency "database_cleaner", "~> 1.7"
 
   s.add_development_dependency "capybara", "~> 3.5"
+
+  # s.add_development_dependency "chromedriver-helper", "~> 1.2"
+  s.add_development_dependency "selenium-webdriver", "~> 3.14"
   s.add_development_dependency "poltergeist", "~> 1.18"
-  s.add_development_dependency "chromedriver-helper", "~> 1.2"
 
   # #gem "timecop", "~> 0.8.1"
 end
