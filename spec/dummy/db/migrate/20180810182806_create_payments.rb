@@ -7,6 +7,6 @@ class CreatePayments < ActiveRecord::Migration
       t.integer :amount, null: false
     end
 
-    create_index(:payments, :user_id)
+    add_index(:payments, :user_id)
   end
 end

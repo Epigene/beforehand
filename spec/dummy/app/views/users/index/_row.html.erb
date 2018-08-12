@@ -1,0 +1,14 @@
+<%-# :user, :locale %>
+
+<tr>
+  <% sleep 0.5 %>
+  <td><%= t("labels.email", locale: locale) %></td>
+  <td><%= user.email %></td>
+
+  <td><%= "Payment count" %></td>
+  <td><%= user.payments.size %></td>
+
+  <td><%= link_to 'Show', user %></td>
+  <td><%= link_to 'Edit', edit_user_path(user) %></td>
+  <td><%= link_to 'Destroy', user, method: :delete, data: { confirm: 'Are you sure?' } %></td>
+</tr>

@@ -6,6 +6,6 @@ class CreateUsers < ActiveRecord::Migration
       t.text :email, null: false
     end
 
-    create_index(:users, :email, unique: true)
+    add_index(:users, :email, unique: true)
   end
 end

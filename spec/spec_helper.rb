@@ -1,11 +1,17 @@
-ENV['RAILS_ENV'] = 'test'
-require File.expand_path('../../config/environment', __FILE__)
+ENV["RAILS_ENV"] = "test"
+require File.expand_path("../dummy/config/environment", __FILE__)
 
-require 'rspec/rails'
+require "rspec/rails"
+require "factory_bot"
+require "pry"
+require "database_cleaner"
+require "capybara"
 
-Dir[Rails.root.join('spec', 'support', '**', '*.rb')].each { |f| require f }
+Dir[Rails.root.join("spec", "support", "**", "*.rb")].each { |f| require f }
 
 RSpec.configure do |config|
+  config.include FactoryBot::Syntax::Methods
+
   config.disable_monkey_patching!
   config.infer_spec_type_from_file_location!
   config.filter_rails_from_backtrace!
@@ -23,11 +29,19 @@ RSpec.configure do |config|
   config.use_transactional_fixtures = false
 
   config.before(:suite) do
+    FactoryBot.find_definitions
+
     DatabaseCleaner.clean_with(:truncation)
   end
 
-  config.before(:each) do
+  config.before(:each) do |test|
     DatabaseCleaner.strategy = :transaction
+
+    if test.metadata.key?(:wait_time)
+      Capybara.default_max_wait_time = test.metadata[:wait_time]
+    else
+      Capybara.default_max_wait_time = 3 # as in 3 seconds
+    end
   end
 
   config.before(:each, type: :feature) do

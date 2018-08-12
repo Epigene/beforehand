@@ -3,26 +3,51 @@ WIP: fragment cache warming for Rails 4.2+
 
 ## Pitch:
 Hate that first requests are slow before the results get cached?  
-`beforehand` introduces a simple DSL (model callbacks on some steroids) where you define which template(s) to render in the background and pre-cache.
+`beforehand` introduces a simple DSL (model callbacks on some steroids)
+where you define which template(s) to render in the background and pre-cache.
 
-## Technology:
+## Technology requirements:
 * Ruby 2.3.7+
 * Rails 4.2.10+ for ActiveJob ecosystem
 * [backport_new_renderer](https://rubygems.org/gems/backport_new_renderer) gem from Rails5 for request-less rendering (see [the post](https://evilmartians.com/chronicles/new-feature-in-rails-5-render-views-outside-of-actions))
+* A __memory-limited, evicting__ cache store, `Redis` is recommended
+* (optional, recommended) `Sidekiq` as the queue adapter
 
-Using `Sidekiq` as the queue adapter and `Redis` as the expiring cache is strongly recommended.  
-In fact __using a dedicated, evicting cache store__ is required to use this gem!
+### Integration checklist
 
-Try these settings for Redis:
+1. Have ActiveJob configured, preferrably with Sidekiq as the adapter
+ > `config.active_job.queue_adapter = :sidekiq`
+2. Have Rails.cache configured, preferably with Redis as the adapter
+ > ```rb
+ > # Pre Rails 5.2
+ >   # in Gemfile
+ >   gem "redis-rails", "~> 4.0"
+ >   
+ >   # in application.rb
+ >   config.cache_store = :redis_store, "redis://127.0.0.1:6380"
+ > 
+ > # Rails 5.2
+ > config.cache_store = :redis_cache_store, {url: "redis://127.0.0.1:6380"}
+ > ```
 
-```
-# must be of limited memory
-maxmemory 300MB
-
-# must have an eviction policy, LRU is good for this
-maxmemory-policy allkeys-lru
-maxmemory-samples 4
-```
+* Try these settings for Redis:
+ > ```
+ > # must be of limited memory
+ > maxmemory 300MB
+ >
+ > # must have an eviction policy, LRU is good for this
+ > maxmemory-policy allkeys-lru
+ > maxmemory-samples 4
+ > ```
+3. Have child records `touch` their parents 
+4. Have the cache clear on every boot
+5. Have caching-enabled view(s) using `beforehand`-flavored cache keys
+6. Have `beforehand` callbacks configured
+ - 5.1 Global configuration
+ - 5.2 Model-specific configuration
+   - 5.2.1 Method that will produce HTML and cache it
+   - 5.2.2 `beforehand` callback that will invoke the method
+ - 5.3 After-init configuration
 
 ## Design considerations:
 1. __Q:__ How does this work?
@@ -31,7 +56,8 @@ maxmemory-samples 4
 
 2. __Q:__ But key managament is hard! Do I get any help?
  > __A:__ Yes!  
- > Use `Beforehand.cache_key(*records, **contexts)` method to generate the appropriate key from anywhere. The order of arguments is irrelevant, there's sorting inside.  
+ > Use `Beforehand.cache_key(*records, **contexts)` method to generate the appropriate key from anywhere.
+ > The order of arguments is irrelevant, there's sorting inside.  
  > You could also define a view helper that wraps that call for less typing.  
 
 3. __Q:__ How do I begin?
@@ -48,7 +74,7 @@ maxmemory-samples 4
  > However, since it is possible for generated HTML to change without template or record having changed (for example, from changes in data passed from controller, config), production cache *must be expired* on every Rails boot. `beforehand` does not do this for you, so, please, add this to your `config/application.rb`
  > ```rb
  > config.after_initialize do
- >   Rails.log("--> Clearing Rails cache after initialization")
+ >   Rails.logger.info("--> Clearing Rails cache after initialization")
  >   Rails.cache.clear
  > end
  >```  
@@ -56,8 +82,9 @@ maxmemory-samples 4
  
 5. __Q:__ What happens if a record gets updated several times in a short while?
  > __A:__ You are asking whether the sensible thing, namely, checking uniqueness and queueing only one job, will happen.  
- > Unfortunately, no. ActiveJob does not expose a backend-independent API for this, so `beforehand` can not support such behavior either. Currently this is a known potential problem zone.  
- > Luckily, `beforehand` does take steps to prevent [dogpile effect](https://www.sobstel.org/blog/preventing-dogpile-effect/), but only in the asynchronious warming part. If you get a hundred requests at the same time, they will all do the work and essentially set the cache to the same value.
+ > Unfortunately, no. ActiveJob does not expose a backend-independent API for this, so `beforehand` can not support such behavior either.  
+ > Luckily, `beforehand` does take steps to prevent [dogpile effect](https://www.sobstel.org/blog/preventing-dogpile-effect/) in the asynchronious warming part, so normally repeat jobs will merely take up queue space, but won't be actually doing anything once their turn comes. 
+ > Please note that several parralel web-requests will totally dogpile the cache and there is little that can or should be done about it.
 
 6. __Q:__ I have a `User` model with `has_many :posts` and `belongs_to :company`. How do I organize `beforehand`'s caching directives in my models?
  > __A:__ A model ought to define caching directives only for templates it itself is used in.  
@@ -70,9 +97,6 @@ maxmemory-samples 4
 
 8. __Q:__ How should I organize `beforehand` for changes in parent to invalidate children record caches?
  > __A:__ This is not standart, but, as [discussed here](https://stackoverflow.com/questions/33409261/missing-touch-option-in-rails-has-many-relation), can be remedied with `children.update_all(updated_at: Time.current)` in a callback. Be careful with how many of these you define, as it will have a performance impact that can outweigh the gains from caching.
-
-8. __Q:__ What else should I know?
- > __A:__ How to enforce JSON-only API (no records passed, only ids and strings)?
 
 ## Use scenarios:
 1. I have a `UsersController#index` action that renders 50 rows on each page. Each row represents a `User` model record. I want the rows to be cached and pre-heated.
@@ -93,9 +117,9 @@ Please, take a look at the `spec` directory for more use-cases.
 
 ## Example config
 There are three layers of config:
-1. global, for defaults
-2. model-specific, which templates to render
-3. after-init, which records to pre-heat according to config in model
+1. global - for defaults
+2. model-specific - how to generate the HTML and where to put it
+3. after-init - which records to pre-heat according to config in model
 
 ### 1. Global config
 Make an initializer and place this inside
@@ -115,41 +139,64 @@ Beforehand.configure do |c|
   # Furthermore, if generating has not finished in 20s (something gone wrong with job1),
   # another job will be able to take over from job1.
   c.anti_dogpile_threshold = 20 # as in 20s
+  
+  # Debugging flag
+  # set to true to get messages in logs like this:
+  # TODO
+  c.verbose = false 
 end
 ```
 
 ### 2. Model-specific config
-This is the meat of the gem. Please also take a look at the models in the test app in `spec/dummy`.  
+This is the meat of the gem.  
+
+
+ Please also take a look at the models in the test app in `spec/dummy`.  
 ```rb
 class User < ActiveRecord::Base
-  # ..
+  # ...
 
-  after_commit :send_email, on: :create 
-  
+  after_commit :last_of_other_commits, on: :create   
 
   # Please, call the .beforehand macro after all your callbacks,
   # since it is an after_commit callback itself
 
-  # To avoid argument ambiguities, the first argument must be an Array of Hashes
-  beforehand(
-    [
-      {
-        # TODO,
-        # config must
-        # 1. allow configuring queue and other active-job configs
+  # Provided your caching-enabled view looks like this:
+  # <% @users.each do |user| %>
+  #   <% cache_key = Beforehand.cache_key(user, locale: I18n.locale, in: "users/index") %>
 
-        # 2. allow configuring cache options such as key and expiry (wrap cache.fetch)
+  #   <% cache(cache_key) do %>
+  #     <%= render "users/index/row", user: user %>
+  #   <% end %>
+  # <% end %>
 
-        # 3. allow configuring the render context and variables
+  SUPPORTED_LOCALES = ["en", "lv"].freeze
 
-        # 4. allow configuring run options (such as wether to run on boot preheat, callback or both)
+  SUPPORTED_LOCALES.each do |locale|
+    # Define a callback for each variant to render
+    beforehand(
+      run: [:on_init, :on_callback],    
+      method: {
+        name: :preheat_users_index_rows,
+        # NB, to avoid serialization problems, *use JSON-compatible positional arg values only*!
+        args: [locale]
       },
-      {
-
+      job_options: {queue: :another_queue},  
+      callback_options: { # supports the same options after_commit does.
+        on: :create 
       }
-    ],
-    on: :create # supports the same options after_commit does.
-  ) 
+    )
+  end  
+
+  private
+    # The actual method that will be invoked asynchroniously
+    def preheat_users_index_rows(locale)
+      cache_key = Beforehand.cache_key(self, locale: locale, in: "users/index")
+
+      Rails.cache.fetch(cache_key) do
+        
+      end
+    end
 end
 ```
 
@@ -164,7 +211,7 @@ Rails.application.configure do
   config.eager_load = true
 
   config.after_initialize do
-    Rails.log("--> Enqueuing records for pre-heating")
+    Rails.logger.info("--> Enqueuing records for pre-heating")
     Beforehand.enqueue
   end
 end
@@ -183,4 +230,12 @@ This is an open-source project, you are welcome to participate in its developmen
 >``` 
 4. [TDD](https://en.wikipedia.org/wiki/Test-driven_development) a new feature
 5. Open a Pull Request from your feature branch to this project's master branch.
+
+### Feature roadmap
+- [] Support for verbose debugging mode
+- [] `.beforehand` method accepts callback options
+- [] Can preheat single records in a single locale
+- [] Can preheat a single record in multiple locales
+- [] Cache job guards against dogpiling
+
 
