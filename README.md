@@ -98,7 +98,7 @@ where you define which template(s) to render in the background and pre-cache.
  > __A:__ This is standart and Rails provides the `belongs_to :parent, touch: true` association option, configure it for models for whom your resource is a parent.
 
 8. __Q:__ How should I organize `beforehand` for changes in parent to invalidate children record caches?
- > __A:__ This is not standart, but, as [discussed here](https://stackoverflow.com/questions/33409261/missing-touch-option-in-rails-has-many-relation), can be remedied with `children.update_all(updated_at: Time.current)` in a callback. Be careful with how many of these you define, as it will have a performance impact that can outweigh the gains from caching.
+ > __A:__ Rails consciously does not provide a 'parent -> child' direction touch option. Instead, you should be including the relevant parent objects in the cache key. That way a new cache key is generated on parent updates without needing to update all children. Addmitedly this does put the burden on the developer to identify the parent objects used in cacheable fragments. Yet another reason to keep the fragments simple and single-resource.
 
 ## Use scenarios:
 1. I have a `UsersController#index` action that renders 50 rows on each page. Each row represents a `User` model record. I want the rows to be cached and pre-heated.
