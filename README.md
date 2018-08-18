@@ -42,9 +42,17 @@ where you define which template(s) to render in the background and pre-cache.
 3. Have child records `touch` their parents 
 4. Have the cache clear on every boot
 5. Have caching-enabled view(s) using `beforehand`-flavored cache keys
-6. Pass a truthy `ENV["CACHE_BEFOREHAND"]` option
+6. Override the default [`cache`](https://github.com/rails/rails/blob/master/actionview/lib/action_view/helpers/cache_helper.rb) helper to always use the passed key as-is, not append the template digest.
+ > ```rb
+ > # in app/helpers/application_helper.rb
+ > def cache(name = {}, options = {}, &block)
+ >   options.merge!(skip_digest: true)
+ >   super
+ > end
+ > ```
+7. Pass a truthy `ENV["CACHE_BEFOREHAND"]` option
    to processes you want to allow to enqueue after-init caching, usually your webserver (puma/unicorn) process, but not `sidekiq` and ad-hoc `rails c` calls.
-7. Have `beforehand` callbacks configured
+8. Have `beforehand` callbacks configured
  - 5.1 Global configuration
  - 5.2 Model-specific configuration
    - 5.2.1 Method that will produce HTML and cache it
@@ -157,7 +165,6 @@ end
 ### 2. Model-specific config
 This is the meat of the gem.  
 
-
  Please also take a look at the models in the test app in `spec/dummy`.  
 ```rb
 class User < ActiveRecord::Base
@@ -165,7 +172,7 @@ class User < ActiveRecord::Base
 
   after_commit :last_of_other_commits, on: :create   
 
-  # Please, call the .beforehand macro after all your callbacks,
+  # Please, put the .beforehand macro after all your callbacks,
   # since it is an after_commit callback itself
 
   # Provided your caching-enabled view looks like this:
