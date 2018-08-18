@@ -84,8 +84,10 @@ where you define which template(s) to render in the background and pre-cache.
  > However, since it is possible for generated HTML to change without template or record having changed (for example, from changes in data passed from controller, config), production cache *must be expired* on every Rails boot. `beforehand` does not do this for you, so, please, add this to your `config/application.rb`
  > ```rb
  > config.after_initialize do
- >   Rails.logger.info("--> Clearing Rails cache after initialization")
- >   Rails.cache.clear
+ >   if ENV["CACHE_BEFOREHAND"].present?
+ >     Rails.logger.info("--> Clearing Rails cache after initialization")
+ >     Rails.cache.clear
+ >   end
  > end
  >```  
  > Beyond that, whatever options `Rails.cache.fetch` accepts, `beforehand` supports. There may be use-cases for specifying a key with expiry within 24 hours or somesuch.
@@ -256,8 +258,10 @@ Rails.application.configure do
   config.cache_classes = true 
 
   config.after_initialize do
-    Rails.logger.info("--> Enqueuing records for pre-heating")
-    Beforehand.enqueue
+    if ENV["CACHE_BEFOREHAND"].present?
+      Rails.logger.info("--> Enqueuing records for pre-heating")
+      Beforehand.enqueue
+    end
   end
 end
 ```
