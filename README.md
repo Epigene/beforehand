@@ -46,7 +46,7 @@ where you define which template(s) to render in the background and pre-cache.
  > ```rb
  > # in app/helpers/application_helper.rb
  > def cache(name = {}, options = {}, &block)
- >   options.merge!(skip_digest: true)
+ >   options = {skip_digest: true}.merge(options)
  >   super
  > end
  > ```
